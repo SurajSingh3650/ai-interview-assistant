@@ -1,4 +1,4 @@
-package com.anonymous.aiinterviewcopilotmobile
+package com.surajsingh.aiinterviewcopilot
 
 import android.os.Build
 import android.os.Bundle

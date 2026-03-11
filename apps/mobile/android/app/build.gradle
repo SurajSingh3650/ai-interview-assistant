@@ -3,9 +3,6 @@ apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 
 def projectRoot = rootDir.getAbsoluteFile().getParentFile().getAbsolutePath()
-def localAppData = System.getenv("LOCALAPPDATA") ?: System.getProperty("java.io.tmpdir")
-
-layout.buildDirectory.set(new File(localAppData, "ai-interview-copilot-mobile/android-build/app"))
 
 /**
  * This is the configuration block to customize your React Native Android app.
@@ -90,22 +87,15 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace 'com.anonymous.aiinterviewcopilotmobile'
+    namespace 'com.surajsingh.aiinterviewcopilot'
     defaultConfig {
-        applicationId 'com.anonymous.aiinterviewcopilotmobile'
+        applicationId 'com.surajsingh.aiinterviewcopilot'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0.0"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
-
-        // Keep object file paths short enough for Windows path length limits.
-        externalNativeBuild {
-            cmake {
-                arguments "-DCMAKE_OBJECT_PATH_MAX=128"
-            }
-        }
     }
     signingConfigs {
         debug {

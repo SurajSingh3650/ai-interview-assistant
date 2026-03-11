@@ -1,0 +1,6 @@
+apps/web
+apps/desktop
+backend
+node_modules
+.git
+.github
