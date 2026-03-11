@@ -1,0 +1,17 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-bg-light text-slate-900 antialiased dark:bg-bg-dark dark:text-slate-100;
+}
+
+.container-section {
+  @apply mx-auto max-w-7xl px-6 py-16;
+}
+
+.gradient-hero {
+  background-image:
+    radial-gradient(circle at 20% 0%, rgba(37, 99, 235, 0.28), transparent 38%),
+    radial-gradient(circle at 80% 10%, rgba(56, 189, 248, 0.2), transparent 34%);
+}

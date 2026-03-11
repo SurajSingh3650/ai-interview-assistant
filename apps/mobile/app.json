@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "AI Interview Copilot",
+    "slug": "ai-interview-copilot-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSSpeechRecognitionUsageDescription": "Allow AI Interview Copilot to convert speech to text.",
+        "NSMicrophoneUsageDescription": "Allow AI Interview Copilot to use the microphone."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0b1220"
+      },
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ],
+      "package": "com.anonymous.aiinterviewcopilotmobile"
+    },
+    "plugins": [
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Allow AI Interview Copilot to use the microphone.",
+          "speechRecognitionPermission": "Allow AI Interview Copilot to convert speech to text."
+        }
+      ]
+    ]
+  }
+}
