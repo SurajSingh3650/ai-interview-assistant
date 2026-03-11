@@ -22,7 +22,7 @@
       "permissions": [
         "android.permission.RECORD_AUDIO"
       ],
-      "package": "com.anonymous.aiinterviewcopilotmobile"
+      "package": "com.surajsingh.aiinterviewcopilot"
     },
     "plugins": [
       [
@@ -32,6 +32,11 @@
           "speechRecognitionPermission": "Allow AI Interview Copilot to convert speech to text."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "10682a52-025a-4b32-a85d-03247908191f"
+      }
+    }
   }
 }

@@ -1,4 +1,7 @@
 node_modules
 .expo
 dist
-.env
+android/.gradle
+android/build
+android/app/build
+*.log
