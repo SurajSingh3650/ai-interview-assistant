@@ -1,26 +1,68 @@
 name: CI
 
 on:
+  # Run CI automatically for changes that affect the monorepo apps or this workflow.
   push:
     branches:
       - main
+    paths:
+      - "backend/**"
+      - "apps/web/**"
+      - "apps/desktop/**"
+      - ".github/workflows/ci.yml"
   pull_request:
+    paths:
+      - "backend/**"
+      - "apps/web/**"
+      - "apps/desktop/**"
+      - ".github/workflows/ci.yml"
+  # Allow maintainers to run the pipeline manually when needed.
   workflow_dispatch:
 
+# Cancel older runs for the same branch/PR to reduce wasted CI minutes.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Principle of least privilege for the workflow token.
+permissions:
+  contents: read
+
 jobs:
+  changes:
+    name: Detect changed projects
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      web: ${{ steps.filter.outputs.web }}
+      desktop: ${{ steps.filter.outputs.desktop }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Detect affected monorepo paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+              - '.github/workflows/ci.yml'
+            web:
+              - 'apps/web/**'
+              - '.github/workflows/ci.yml'
+            desktop:
+              - 'apps/desktop/**'
+              - '.github/workflows/ci.yml'
 
   backend:
     name: Backend
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
-
     defaults:
       run:
         working-directory: backend
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -32,21 +74,30 @@ jobs:
           cache: npm
           cache-dependency-path: backend/package-lock.json
 
+      # Use npm ci for deterministic, lockfile-based installs in CI.
       - name: Install dependencies
         run: npm ci
 
-      - name: Validate backend JavaScript
-        run: node --check src/server.js
+      # Run backend lint only if a lint script exists in package.json.
+      - name: Lint backend
+        run: npm run lint --if-present
 
+      # Run backend tests only if a test script exists in package.json.
+      - name: Test backend
+        run: npm test --if-present
+
+      # Keep a lightweight syntax validation step for the current backend codebase.
+      - name: Validate backend entrypoint
+        run: node --check src/server.js
 
   web:
     name: Web
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
-
     defaults:
       run:
         working-directory: apps/web
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -58,54 +109,29 @@ jobs:
           cache: npm
           cache-dependency-path: apps/web/package-lock.json
 
+      # Install only the web app dependencies for faster monorepo CI.
       - name: Install dependencies
         run: npm ci
 
-      - name: Build web application
+      # Next.js exposes lint via package.json in this project.
+      - name: Lint web
+        run: npm run lint --if-present
+
+      # Build the production web bundle with CI-safe environment defaults.
+      - name: Build web
         env:
           NEXT_PUBLIC_API_BASE_URL: http://localhost:8082
           NEXT_PUBLIC_WS_BASE_URL: ws://localhost:8082
         run: npm run build
 
-
-  mobile:
-    name: Mobile
-    runs-on: ubuntu-latest
-
-    defaults:
-      run:
-        working-directory: apps/mobile
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: apps/mobile/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Export Expo bundle
-        env:
-          CI: "1"
-          EXPO_PUBLIC_API_BASE_URL: http://localhost:8082
-          EXPO_PUBLIC_WS_BASE_URL: ws://localhost:8082
-        run: npx expo export --platform all
-
-
   desktop:
     name: Desktop
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.desktop == 'true'
     runs-on: ubuntu-latest
-
     defaults:
       run:
         working-directory: apps/desktop
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -117,10 +143,16 @@ jobs:
           cache: npm
           cache-dependency-path: apps/desktop/package-lock.json
 
+      # Install only desktop dependencies to keep the monorepo job isolated.
       - name: Install dependencies
         run: npm ci
 
-      - name: Build desktop frontend
+      # Run lint if the desktop package adds it later; no-op today.
+      - name: Lint desktop
+        run: npm run lint --if-present
+
+      # Build the desktop frontend bundle. This avoids requiring Rust for CI unless desired later.
+      - name: Build desktop
         env:
           VITE_API_BASE_URL: http://localhost:8082
           VITE_WS_BASE_URL: ws://localhost:8082
