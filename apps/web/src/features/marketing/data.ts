@@ -5,7 +5,7 @@ export const platformFeatures = [
   },
   {
     title: "Cross-Platform",
-    desc: "Unified experience across web, desktop, and mobile clients."
+    desc: "Unified experience across web and desktop clients."
   },
   {
     title: "AI Orchestration",

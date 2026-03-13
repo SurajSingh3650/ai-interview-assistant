@@ -1,6 +1,6 @@
 # AI Interview Assistant
 
-AI Interview Assistant is a full-stack, multi-platform interview preparation system for web, mobile, and desktop. It helps users capture interview questions from speech or screen content, generate concise AI answers and hints, maintain session context, and review interview history and analytics.
+AI Interview Assistant is a full-stack interview preparation system for web and desktop. It helps users capture interview questions from speech or screen content, generate concise AI answers and hints, maintain session context, and review interview history and analytics.
 
 All clients connect to the same backend API and share the same core interview workflow.
 
@@ -19,7 +19,6 @@ Core capabilities:
 Supported clients:
 
 - Web application
-- Mobile application
 - Desktop application (Tauri)
 - Shared backend API
 
@@ -30,11 +29,6 @@ Frontend, web:
 - React
 - Next.js
 - Tailwind CSS
-
-Mobile:
-
-- React Native
-- Expo
 
 Desktop:
 
@@ -67,11 +61,6 @@ AI and supporting services:
                    +----------+-----------+
                               |
                    +----------v-----------+
-                   |    Mobile Client     |
-                   | React Native + Expo  |
-                   +----------+-----------+
-                              |
-                   +----------v-----------+
                    |   Desktop Client     |
                    |   Tauri + React      |
                    +----------+-----------+
@@ -101,7 +90,7 @@ AI and supporting services:
 
 ## Interview Flow
 
-1. User signs in on web, mobile, or desktop.
+1. User signs in on web or desktop.
 2. User starts an interview session.
 3. Microphone input streams partial transcript results in real time.
 4. Desktop can also capture the screen, run OCR, and detect visible interview questions.
@@ -122,7 +111,6 @@ Current workspace:
 ai-ass/
 ├── apps/
 │   ├── desktop/        # Tauri desktop client
-│   ├── mobile/         # Expo / React Native client
 │   └── web/            # Web client
 ├── backend/            # Node.js / Express backend
 └── README.md
@@ -134,7 +122,6 @@ Recommended production monorepo layout:
 ai-interview-assistant/
 ├── apps/
 │   ├── web/            # React web app
-│   ├── mobile/         # React Native mobile app
 │   └── desktop/        # Tauri desktop app
 ├── services/
 │   └── backend/        # Node.js API server
@@ -153,7 +140,6 @@ ai-interview-assistant/
 Folder responsibilities:
 
 - `apps/web`: browser-based interview experience
-- `apps/mobile`: mobile interview workflow and session UX
 - `apps/desktop`: desktop-focused workflow with screen capture and OCR
 - `services/backend`: shared API, auth, WebSocket realtime, AI orchestration
 - `packages/shared`: cross-platform contracts, shared types, SDK utilities
@@ -217,7 +203,6 @@ Best practices:
 - npm 10+
 - Redis
 - MongoDB instance for development
-- Expo tooling for mobile
 - Rust toolchain and Tauri prerequisites for desktop
 
 ### Setup
@@ -234,7 +219,6 @@ cd ai-interview-assistant
 ```bash
 cd backend && npm install
 cd ../apps/web && npm install
-cd ../mobile && npm install
 cd ../desktop && npm install
 ```
 
@@ -257,14 +241,7 @@ cd apps/web
 npm run dev
 ```
 
-6. Run mobile app with Expo
-
-```bash
-cd apps/mobile
-npm run dev
-```
-
-7. Launch desktop app with Tauri
+6. Launch desktop app with Tauri
 
 ```bash
 cd apps/desktop
@@ -280,7 +257,6 @@ npm install
 
 npm run dev:backend
 npm run dev:web
-npm run dev:mobile
 npm run dev:desktop
 ```
 
@@ -295,9 +271,6 @@ npm run start
 # Web
 npm run build:web
 
-# Mobile
-npm run build:mobile
-
 # Desktop
 npm run build:desktop
 ```
@@ -307,7 +280,6 @@ Current workspace equivalents:
 ```bash
 cd backend && npm start
 cd apps/web && npm run build
-cd apps/mobile && npx expo export --platform all
 cd apps/desktop && npm run tauri:build
 ```
 
@@ -365,11 +337,6 @@ Web application:
 - Vercel
 - Netlify
 
-Mobile:
-
-- Expo EAS Build
-- Expo OTA Updates
-
 Desktop:
 
 - Tauri build system
@@ -401,11 +368,10 @@ Recommended CI/CD flow:
 3. Run automated tests
 4. Build backend
 5. Build web app
-6. Build mobile app
-7. Build desktop app
-8. Deploy backend
-9. Deploy web
-10. Publish desktop artifacts to GitHub Releases
+6. Build desktop app
+7. Deploy backend
+8. Deploy web
+9. Publish desktop artifacts to GitHub Releases
 
 ### Example GitHub Actions Workflow
 
@@ -440,10 +406,6 @@ jobs:
         run: npm install
         working-directory: apps/web
 
-      - name: Install mobile dependencies
-        run: npm install
-        working-directory: apps/mobile
-
       - name: Install desktop dependencies
         run: npm install
         working-directory: apps/desktop
@@ -463,10 +425,6 @@ jobs:
       - name: Build web
         run: npm run build
         working-directory: apps/web
-
-      - name: Build mobile
-        run: npm run build
-        working-directory: apps/mobile
 
       - name: Build desktop
         run: npm run tauri:build
@@ -631,4 +589,3 @@ SOFTWARE.
 - Deploy targets configured
 - Error tracking enabled
 - Desktop binaries signed
-- Mobile OTA strategy defined

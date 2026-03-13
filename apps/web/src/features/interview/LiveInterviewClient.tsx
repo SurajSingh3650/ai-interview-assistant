@@ -243,7 +243,7 @@ export function LiveInterviewClient() {
   return (
     <div className="container-section">
       <h1 className="text-3xl font-semibold">Live Interview Mode</h1>
-      <p className="mt-2 text-slate-600 dark:text-slate-300">Same transcript-to-hint flow as mobile, now on web.</p>
+      <p className="mt-2 text-slate-600 dark:text-slate-300">Transcript-to-hint flow optimized for the web client.</p>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">

@@ -4,3 +4,14 @@ backend
 node_modules
 .git
 .github
+apps/mobile/node_modules
+apps/mobile/.expo
+apps/mobile/.android-user-home
+apps/mobile/.gradle-user-home
+apps/mobile/.npm-cache
+apps/mobile/android/.kotlin
+apps/mobile/android/.gradle
+apps/mobile/android/build
+apps/mobile/android/app/build
+apps/mobile/android/app/.cxx
+apps/mobile/*.log

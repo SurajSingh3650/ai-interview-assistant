@@ -1,6 +1,6 @@
 # AI Interview Assistant Deployment Guide
 
-This document provides a detailed deployment guide for the AI Interview Assistant platform across backend, web, mobile, and desktop delivery channels.
+This document provides a detailed deployment guide for the AI Interview Assistant platform across backend, web, and desktop delivery channels.
 
 It is written as an operational runbook for engineers deploying the system in staging or production.
 
@@ -10,7 +10,6 @@ This guide covers:
 
 - backend deployment
 - web deployment
-- mobile release workflow
 - desktop packaging and distribution
 - environment configuration
 - secrets handling
@@ -25,7 +24,6 @@ Recommended hosting targets:
 
 - Backend API: Render, Railway, or Fly.io
 - Web app: Vercel or Netlify
-- Mobile app: Expo EAS Build + OTA updates
 - Desktop app: Tauri build pipeline + GitHub Releases
 - Database: MongoDB Atlas or another managed MongoDB provider
 - Redis: Upstash Redis, Railway Redis, or managed Redis provider
@@ -34,8 +32,6 @@ Recommended hosting targets:
 
 ```text
 Web Client
-   |
-Mobile Client
    |
 Desktop Client
    |
@@ -60,9 +56,8 @@ Before deploying anything, confirm the following:
 - Redis is reachable from the backend environment
 - Database is reachable from the backend environment
 - Web app points to the correct backend base URL
-- Mobile app points to the correct backend base URL
 - Desktop app points to the correct backend base URL
-- Type checks pass for backend, web, mobile, and desktop
+- Type checks pass for backend, web, and desktop
 - Build commands pass locally
 
 Recommended local checks:
@@ -70,7 +65,6 @@ Recommended local checks:
 ```bash
 cd backend && npm run dev
 cd apps/web && npm run build
-cd apps/mobile && npx expo export --platform all
 cd apps/desktop && npm run tauri:build
 ```
 
@@ -370,80 +364,7 @@ Check:
 - AI hint renders
 - error states display clearly
 
-## 8. Mobile Deployment
-
-Current workspace path:
-
-- `apps/mobile/`
-
-Recommended service:
-
-- Expo EAS Build
-
-### 8.1 Mobile Environment Configuration
-
-Set production API URL in mobile environment:
-
-```env
-EXPO_PUBLIC_API_BASE_URL=https://api.example.com
-EXPO_PUBLIC_WS_BASE_URL=wss://api.example.com
-```
-
-Use the actual variable names expected by the mobile app config.
-
-### 8.2 Build Mobile App with Expo
-
-1. Install EAS CLI
-
-```bash
-npm install -g eas-cli
-```
-
-2. Log in
-
-```bash
-eas login
-```
-
-3. Configure project
-
-```bash
-cd apps/mobile
-eas build:configure
-```
-
-4. Build Android
-
-```bash
-eas build --platform android
-```
-
-5. Build iOS
-
-```bash
-eas build --platform ios
-```
-
-### 8.3 OTA Updates
-
-Use Expo Updates for JavaScript-only updates:
-
-```bash
-eas update --branch production --message "Production update"
-```
-
-### 8.4 Mobile Validation
-
-Check:
-
-- login works
-- session start works
-- microphone permissions prompt correctly
-- partial transcript appears live
-- AI hint renders
-- network error messaging is readable
-
-## 9. Desktop Deployment
+## 8. Desktop Deployment
 
 Current workspace path:
 
@@ -453,7 +374,7 @@ Framework:
 
 - Tauri
 
-### 9.1 Desktop Environment Configuration
+### 8.1 Desktop Environment Configuration
 
 Set backend URLs in the desktop app configuration or environment:
 
@@ -464,7 +385,7 @@ VITE_WS_BASE_URL=wss://api.example.com
 
 Use the exact variable names expected by the desktop config.
 
-### 9.2 Build Desktop Application
+### 8.2 Build Desktop Application
 
 ```bash
 cd apps/desktop
@@ -478,7 +399,7 @@ Expected output targets:
 - macOS: `.dmg`
 - Linux: `.AppImage` or `.deb`
 
-### 9.3 GitHub Releases Distribution
+### 8.3 GitHub Releases Distribution
 
 Recommended release flow:
 
@@ -488,7 +409,7 @@ Recommended release flow:
 4. Upload generated binaries
 5. Publish release notes
 
-### 9.4 Desktop Validation
+### 8.4 Desktop Validation
 
 Check:
 
@@ -500,13 +421,13 @@ Check:
 - auto-population of transcript works
 - AI hint renders from detected question
 
-## 10. CI/CD Pipeline
+## 9. CI/CD Pipeline
 
 Recommended workflow file:
 
 - `.github/workflows/deploy.yml`
 
-### 10.1 Pipeline Stages
+### 9.1 Pipeline Stages
 
 1. Checkout repository
 2. Install dependencies
@@ -514,13 +435,12 @@ Recommended workflow file:
 4. Run tests
 5. Build backend
 6. Build web
-7. Build mobile
-8. Build desktop
-9. Deploy backend
-10. Deploy web
-11. Publish desktop builds
+7. Build desktop
+8. Deploy backend
+9. Deploy web
+10. Publish desktop builds
 
-### 10.2 Example Workflow
+### 9.2 Example Workflow
 
 ```yaml
 name: Deploy
@@ -549,10 +469,6 @@ jobs:
       - name: Install web dependencies
         run: npm install
         working-directory: apps/web
-
-      - name: Install mobile dependencies
-        run: npm install
-        working-directory: apps/mobile
 
       - name: Install desktop dependencies
         run: npm install
@@ -595,7 +511,7 @@ jobs:
         run: echo "Upload desktop binaries here"
 ```
 
-### 10.3 CI/CD Secrets
+### 9.3 CI/CD Secrets
 
 Store these in GitHub Actions secrets:
 
@@ -608,7 +524,7 @@ Store these in GitHub Actions secrets:
 - deployment platform tokens
 - signing credentials for desktop binaries
 
-## 11. Recommended Release Order
+## 10. Recommended Release Order
 
 Deploy in this order:
 
@@ -616,12 +532,11 @@ Deploy in this order:
 2. Redis configuration changes
 3. backend API
 4. web client
-5. mobile release or OTA
-6. desktop build and GitHub release
+5. desktop build and GitHub release
 
 This order reduces the chance of clients pointing to incompatible API behavior.
 
-## 12. Post-Deployment Validation
+## 11. Post-Deployment Validation
 
 After production deployment, test these flows:
 
@@ -643,15 +558,6 @@ After production deployment, test these flows:
 - send transcript
 - receive AI hint
 
-### Mobile
-
-- login
-- session start
-- microphone permission
-- transcript updates live
-- send transcript
-- receive AI hint
-
 ### Desktop
 
 - login
@@ -662,7 +568,7 @@ After production deployment, test these flows:
 - transcript auto-fill
 - AI hint generation
 
-## 13. Monitoring and Alerts
+## 12. Monitoring and Alerts
 
 In production, monitor:
 
@@ -690,7 +596,7 @@ Set alerts for:
 - elevated login failures
 - elevated AI help failure rate
 
-## 14. Rollback Strategy
+## 13. Rollback Strategy
 
 If deployment introduces regressions:
 
@@ -705,17 +611,12 @@ If deployment introduces regressions:
 1. Re-deploy previous build in Vercel or Netlify
 2. Validate login and API base URL
 
-### Mobile rollback
-
-1. Publish previous OTA update if issue is JS-only
-2. If native issue exists, distribute previous binary build
-
 ### Desktop rollback
 
 1. Restore previous GitHub Release build
 2. Mark the broken release as deprecated
 
-## 15. Common Deployment Issues
+## 14. Common Deployment Issues
 
 ### Backend starts locally but fails in production
 
@@ -736,7 +637,7 @@ Possible causes:
 - backend cannot reach provider API
 - wrong `AI_PROVIDER` value
 
-### Web or mobile cannot connect to backend
+### Web or desktop cannot connect to backend
 
 Possible causes:
 
@@ -754,7 +655,7 @@ Possible causes:
 - wrong display selected
 - OCR dependency not bundled correctly
 
-## 16. Security Controls for Production
+## 15. Security Controls for Production
 
 Production requirements:
 
@@ -765,23 +666,22 @@ Production requirements:
 - request validation enabled
 - auth token expiry enforced
 - leaked keys rotated immediately
-- desktop and mobile builds signed where required
+- desktop builds signed where required
 
-## 17. Final Go-Live Checklist
+## 16. Final Go-Live Checklist
 
 - production environment variables configured
 - database reachable
 - Redis reachable
 - backend healthy
 - web app healthy
-- mobile build validated
 - desktop build validated
 - AI provider key valid
 - provider quota verified
 - monitoring enabled
 - rollback plan documented
 
-## 18. Recommended Future Improvements
+## 17. Recommended Future Improvements
 
 For a stronger production deployment setup, add:
 
