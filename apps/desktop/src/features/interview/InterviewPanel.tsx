@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { createRealtimeToken, logout } from "../auth/auth.api";
-import { createInterviewSession, requestAiHelp, type AiHelpResponse } from "./session.api";
+import { createInterviewSession, streamAiHelp, type AiHelpResponse } from "./session.api";
 import { RealtimeClient } from "../realtime/realtimeClient";
 import { toggleOverlayWindow } from "../overlay/overlay";
 import type { Mode } from "../../shared/config";
@@ -9,6 +9,7 @@ import {
   SCREEN_CAPTURE_QUESTION_DETECTED_EVENT,
   type ScreenCaptureQuestionDetectedDetail
 } from "../screen-capture/screenCaptureEvents";
+import { useBrowserVoiceInput } from "./useBrowserVoiceInput";
 
 interface InterviewPanelProps {
   accessToken: string;
@@ -24,24 +25,58 @@ export function InterviewPanel({ accessToken, userEmail, onLogout }: InterviewPa
   const [interimSpeech, setInterimSpeech] = useState("");
   const [transcript, setTranscript] = useState("");
   const [aiResponse, setAiResponse] = useState<AiHelpResponse | null>(null);
+  const [streamingAnswer, setStreamingAnswer] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [micSupported, setMicSupported] = useState(false);
-  const [isListening, setIsListening] = useState(false);
-  const [micError, setMicError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const recognitionRef = useRef<any>(null);
-  const micStreamRef = useRef<MediaStream | null>(null);
-  const shouldListenRef = useRef(false);
-  const statusRef = useRef(status);
   const generatedSpeechRef = useRef("");
-
-  useEffect(() => {
-    statusRef.current = status;
-  }, [status]);
 
   useEffect(() => {
     generatedSpeechRef.current = generatedSpeech;
   }, [generatedSpeech]);
+
+  const client = useMemo(
+    () =>
+      new RealtimeClient({
+        onCoachHint: () => undefined,
+        onTranscriptUpdate: (message) => {
+          setGeneratedSpeech(message.transcript || "");
+          setInterimSpeech(message.isFinal ? "" : message.partialTranscript || "");
+          setTranscript((message.partialTranscript || message.transcript || "").trim());
+        },
+        onAiResponse: (message) => {
+          setAiResponse(message);
+          setStreamingAnswer(message.answer || "");
+        },
+        onStatus: (nextStatus) => setStatus(nextStatus),
+        onError: (message) => setError(message)
+      }),
+    []
+  );
+
+  const voiceInput = useBrowserVoiceInput({
+    canAutoRestart: () => status === "connected",
+    onPartialTranscript: (partial) => {
+      const liveTranscript = generatedSpeechRef.current ? `${generatedSpeechRef.current} ${partial}`.trim() : partial;
+      setInterimSpeech(partial);
+      setTranscript(liveTranscript);
+    },
+    onFinalTranscript: (finalChunk) => {
+      setGeneratedSpeech((previous) => {
+        const next = previous ? `${previous} ${finalChunk}`.trim() : finalChunk;
+        setInterimSpeech("");
+        setTranscript(next);
+        return next;
+      });
+    },
+    onAudioChunk: (audioBase64) => {
+      if (status === "connected") {
+        client.sendAudioChunk(audioBase64);
+      }
+    },
+    onError: (message) => {
+      setError(getFriendlyMicErrorMessage(new Error(message)));
+    }
+  });
 
   useEffect(() => {
     function handleDetectedQuestion(event: Event) {
@@ -60,12 +95,20 @@ export function InterviewPanel({ accessToken, userEmail, onLogout }: InterviewPa
       }
 
       setLoading(true);
-      requestAiHelp(accessToken, detectedQuestion, sessionId)
-        .then((response) => {
+      setStreamingAnswer("");
+      setAiResponse(null);
+
+      streamAiHelp(accessToken, detectedQuestion, sessionId, {
+        onDelta: (delta) => {
+          setStreamingAnswer((previous) => `${previous}${delta}`);
+        },
+        onFinal: (response) => {
           setAiResponse(response);
-        })
+        }
+      })
         .catch((err) => {
           setAiResponse(null);
+          setStreamingAnswer("");
           setError(getFriendlyApiErrorMessage(err));
         })
         .finally(() => {
@@ -79,92 +122,6 @@ export function InterviewPanel({ accessToken, userEmail, onLogout }: InterviewPa
     };
   }, [accessToken, sessionId]);
 
-  const client = useMemo(
-    () =>
-      new RealtimeClient({
-        onCoachHint: () => undefined,
-        onStatus: (nextStatus) => setStatus(nextStatus),
-        onError: (message) => setError(message)
-      }),
-    []
-  );
-
-  useEffect(() => {
-    const win = window as Window & {
-      SpeechRecognition?: new () => any;
-      webkitSpeechRecognition?: new () => any;
-    };
-
-    const SpeechRecognitionCtor = win.SpeechRecognition || win.webkitSpeechRecognition;
-    setMicSupported(Boolean(SpeechRecognitionCtor));
-
-    if (!SpeechRecognitionCtor) {
-      return;
-    }
-
-    const recognition = new SpeechRecognitionCtor();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = "en-US";
-
-    recognition.onresult = (event: any) => {
-      let finalChunk = "";
-      let interimChunk = "";
-
-      for (let i = event.resultIndex; i < event.results.length; i += 1) {
-        const text = String(event.results[i][0]?.transcript || "").trim();
-        if (!text) continue;
-        if (event.results[i].isFinal) {
-          finalChunk += `${text} `;
-        } else {
-          interimChunk += `${text} `;
-        }
-      }
-
-      const normalizedFinal = finalChunk.trim();
-      const normalizedInterim = interimChunk.trim();
-
-      if (normalizedFinal) {
-        setGeneratedSpeech((prev) => {
-          const next = (prev ? `${prev} ${normalizedFinal}` : normalizedFinal).trim();
-          const liveTranscript = normalizedInterim ? `${next} ${normalizedInterim}`.trim() : next;
-          setTranscript(liveTranscript);
-          return next;
-        });
-      } else if (normalizedInterim) {
-        const liveTranscript = generatedSpeechRef.current
-          ? `${generatedSpeechRef.current} ${normalizedInterim}`.trim()
-          : normalizedInterim;
-        setTranscript(liveTranscript);
-      }
-
-      setInterimSpeech(normalizedInterim);
-    };
-
-    recognition.onerror = (event: any) => {
-      setMicError(`Microphone error: ${event.error || "unknown"}`);
-      setIsListening(false);
-      setInterimSpeech("");
-      shouldListenRef.current = false;
-    };
-
-    recognition.onend = () => {
-      setIsListening(false);
-      setInterimSpeech("");
-      if (!shouldListenRef.current || statusRef.current !== "connected") return;
-      recognition.start();
-      setIsListening(true);
-    };
-
-    recognitionRef.current = recognition;
-
-    return () => {
-      shouldListenRef.current = false;
-      recognition.stop();
-      recognitionRef.current = null;
-    };
-  }, []);
-
   async function startSession() {
     setError(null);
     try {
@@ -172,34 +129,24 @@ export function InterviewPanel({ accessToken, userEmail, onLogout }: InterviewPa
       const realtimeToken = await createRealtimeToken(accessToken);
       client.connect(realtimeToken, session.id);
       setSessionId(session.id);
+      setGeneratedSpeech("");
+      setInterimSpeech("");
+      setTranscript("");
+      setAiResponse(null);
+      setStreamingAnswer("");
     } catch (err) {
       setError(getFriendlyApiErrorMessage(err));
     }
   }
 
   function stopSession() {
-    shouldListenRef.current = false;
-    if (recognitionRef.current) {
-      recognitionRef.current.stop();
-    }
-    micStreamRef.current?.getTracks().forEach((track) => track.stop());
-    micStreamRef.current = null;
-    setIsListening(false);
-    setInterimSpeech("");
+    voiceInput.stop();
+    client.stopRecording();
     client.disconnect();
     setStatus("disconnected");
     setSessionId(null);
-  }
-
-  function pasteTranscript() {
-    const liveTranscript = `${generatedSpeech} ${interimSpeech}`.trim();
-    if (!liveTranscript) {
-      setError("No speech text available to paste.");
-      return;
-    }
-
-    setError(null);
-    setTranscript(liveTranscript);
+    setGeneratedSpeech("");
+    setInterimSpeech("");
   }
 
   function clearQuestion() {
@@ -207,6 +154,7 @@ export function InterviewPanel({ accessToken, userEmail, onLogout }: InterviewPa
     setInterimSpeech("");
     setTranscript("");
     setAiResponse(null);
+    setStreamingAnswer("");
     setError(null);
   }
 
@@ -220,11 +168,21 @@ export function InterviewPanel({ accessToken, userEmail, onLogout }: InterviewPa
 
     setError(null);
     setLoading(true);
+    setAiResponse(null);
+    setStreamingAnswer("");
+
     try {
-      const response = await requestAiHelp(accessToken, normalizedTranscript, sessionId ?? undefined);
-      setAiResponse(response);
+      await streamAiHelp(accessToken, normalizedTranscript, sessionId ?? undefined, {
+        onDelta: (delta) => {
+          setStreamingAnswer((previous) => `${previous}${delta}`);
+        },
+        onFinal: (response) => {
+          setAiResponse(response);
+        }
+      });
     } catch (err) {
       setAiResponse(null);
+      setStreamingAnswer("");
       setError(getFriendlyApiErrorMessage(err));
     } finally {
       setLoading(false);
@@ -232,37 +190,22 @@ export function InterviewPanel({ accessToken, userEmail, onLogout }: InterviewPa
   }
 
   async function startMic() {
-    if (!micSupported || !recognitionRef.current || status !== "connected") {
+    if (status !== "connected") {
       return;
     }
+
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        }
-      });
-      micStreamRef.current?.getTracks().forEach((track) => track.stop());
-      micStreamRef.current = stream;
-      setMicError(null);
-      shouldListenRef.current = true;
-      recognitionRef.current.start();
-      setIsListening(true);
+      setError(null);
+      client.startRecording();
+      await voiceInput.start();
     } catch (err) {
-      setMicError(getFriendlyMicErrorMessage(err));
-      shouldListenRef.current = false;
+      setError(getFriendlyMicErrorMessage(err));
     }
   }
 
   function stopMic() {
-    shouldListenRef.current = false;
-    if (recognitionRef.current) {
-      recognitionRef.current.stop();
-    }
-    micStreamRef.current?.getTracks().forEach((track) => track.stop());
-    micStreamRef.current = null;
-    setIsListening(false);
+    voiceInput.stop();
+    client.stopRecording();
     setInterimSpeech("");
   }
 
@@ -308,25 +251,23 @@ export function InterviewPanel({ accessToken, userEmail, onLogout }: InterviewPa
         <button className="ghost" onClick={stopSession}>
           Stop
         </button>
-        <button className="ghost" onClick={isListening ? stopMic : startMic} disabled={!micSupported || status !== "connected"}>
-          {isListening ? "Stop Mic" : "Start Mic"}
+        <button className="ghost" onClick={voiceInput.listening ? stopMic : startMic} disabled={!voiceInput.supported || status !== "connected"}>
+          {voiceInput.listening ? "Stop Mic" : "Start Mic"}
         </button>
         <button className="ghost" onClick={() => toggleOverlayWindow()}>
           Toggle Overlay
         </button>
       </div>
 
-      <p className="muted">Mic: {!micSupported ? "Not supported" : isListening ? "Listening" : "Idle"}</p>
+      <p className="muted">Mic: {!voiceInput.supported ? "Not supported" : voiceInput.listening ? "Listening" : "Idle"}</p>
+      <p className="muted">STT Provider: browser fallback active. Backend can be upgraded to Deepgram or AssemblyAI with API keys.</p>
 
       <section className="coach-panel">
-        <h2>Generated Speech Text</h2>
+        <h2>Live Transcript</h2>
         <p>{`${generatedSpeech} ${interimSpeech}`.trim() || "No speech detected yet."}</p>
       </section>
 
       <div className="actions-row compact-row">
-        <button className="ghost" onClick={pasteTranscript}>
-          Paste Transcript
-        </button>
         <button className="ghost" onClick={clearQuestion}>
           Clear Question
         </button>
@@ -338,40 +279,39 @@ export function InterviewPanel({ accessToken, userEmail, onLogout }: InterviewPa
           <textarea
             value={transcript}
             onChange={(event) => setTranscript(event.target.value)}
-            placeholder="What is Java?"
+            placeholder="Speak or type your interview question here..."
             rows={5}
           />
         </label>
         <button type="submit" disabled={loading}>
-          {loading ? "Generating..." : "Send Transcript"}
+          {loading ? "Streaming..." : "Ask AI"}
         </button>
       </form>
 
       <section className="coach-panel">
-        <h2>Realtime AI Hint</h2>
-        {aiResponse ? (
+        <h2>Streaming AI Hint</h2>
+        {streamingAnswer || aiResponse ? (
           <>
             <p><strong>Answer:</strong></p>
-            <p>{aiResponse.answer}</p>
+            <p>{streamingAnswer || aiResponse?.answer}</p>
             <p><strong>Key Points:</strong></p>
-            {aiResponse.bulletPoints.length > 0 ? (
+            {aiResponse?.bulletPoints.length ? (
               <ul className="response-list">
                 {aiResponse.bulletPoints.map((point, index) => (
                   <li key={`${index}-${point}`}>{point}</li>
                 ))}
               </ul>
             ) : (
-              <p className="muted">No key points returned.</p>
+              <p className="muted">Structured key points appear after the stream completes.</p>
             )}
             <p><strong>Speaking Format:</strong></p>
-            <p>{aiResponse.speakingFormat}</p>
+            <p>{aiResponse?.speakingFormat || streamingAnswer || "Waiting for final formatting..."}</p>
           </>
         ) : (
-          <p>AI response will appear here after you send the transcript.</p>
+          <p>AI response will stream here after you send the transcript.</p>
         )}
       </section>
 
-      {micError ? <p className="error">Microphone: {micError}</p> : null}
       {error ? <p className="error">{error}</p> : null}
     </section>
   );

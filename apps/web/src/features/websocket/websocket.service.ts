@@ -72,6 +72,53 @@ export class InterviewWebSocketService {
     );
   }
 
+  startRecording() {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      throw new Error("WebSocket is not connected");
+    }
+
+    this.ws.send(JSON.stringify({ type: "start_recording", payload: {} }));
+  }
+
+  sendTranscriptChunk(transcript: string, isFinal = false) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      throw new Error("WebSocket is not connected");
+    }
+
+    this.ws.send(
+      JSON.stringify({
+        type: "audio_stream",
+        payload: {
+          transcript,
+          isFinal
+        }
+      })
+    );
+  }
+
+  sendAudioChunk(audioBase64: string) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      throw new Error("WebSocket is not connected");
+    }
+
+    this.ws.send(
+      JSON.stringify({
+        type: "audio_stream",
+        payload: {
+          audioBase64
+        }
+      })
+    );
+  }
+
+  stopRecording() {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    this.ws.send(JSON.stringify({ type: "stop_recording", payload: {} }));
+  }
+
   disconnect() {
     this.session = null;
     if (this.reconnectTimer) {

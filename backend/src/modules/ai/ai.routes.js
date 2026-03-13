@@ -14,6 +14,13 @@ router.post(
 );
 
 router.post(
+  "/ai-help/stream",
+  authGuard,
+  createRateLimiter({ prefix: "rate:ai-help" }),
+  aiController.streamAiResponse
+);
+
+router.post(
   "/ai-response",
   authGuard,
   createRateLimiter({ prefix: "rate:ai-help" }),

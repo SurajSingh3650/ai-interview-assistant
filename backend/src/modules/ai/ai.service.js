@@ -11,6 +11,7 @@ const CACHE_TTL_SEC = 60 * 10;
 const CACHE_VERSION = "v3";
 const SESSION_MEMORY_ROLE_USER = "user";
 const SESSION_MEMORY_ROLE_ASSISTANT = "assistant";
+const STREAM_CACHE_VERSION = "v1";
 
 function normalizeTranscript(transcript) {
   return String(transcript || "").trim().replace(/\s+/g, " ");
@@ -56,6 +57,30 @@ function cacheKeyForTranscript(transcript, context = {}, memoryTurns = []) {
     .digest("hex");
 
   return `ai-help:${hash}`;
+}
+
+function streamingCacheKeyForTranscript(transcript, context = {}, memoryTurns = []) {
+  const cacheContext = {
+    role: context.role || "",
+    company: context.company || "",
+    speakingStyle: context.speakingStyle || "",
+    memoryTurns
+  };
+
+  const hash = crypto
+    .createHash("sha256")
+    .update(
+      JSON.stringify({
+        transcript,
+        context: cacheContext,
+        provider: env.AI_PROVIDER,
+        model: env.OPENAI_STREAM_MODEL,
+        version: STREAM_CACHE_VERSION
+      })
+    )
+    .digest("hex");
+
+  return `ai-help-stream:${hash}`;
 }
 
 function sessionMemoryKey(sessionId) {
@@ -183,6 +208,113 @@ async function setCachedResponse(key, payload) {
   await redis.set(key, JSON.stringify(payload), "EX", CACHE_TTL_SEC);
 }
 
+async function generateStreamingWithOpenAI(transcript, context, memoryTurns, onDelta) {
+  if (!env.OPENAI_API_KEY) {
+    return null;
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), env.AI_TIMEOUT_MS);
+  const response = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${env.OPENAI_API_KEY}`
+    },
+    body: JSON.stringify({
+      model: env.OPENAI_STREAM_MODEL,
+      input: [
+        {
+          role: "system",
+          content: buildSystemPrompt(context, memoryTurns)
+        },
+        {
+          role: "user",
+          content: `Question or transcript: ${transcript}`
+        }
+      ],
+      stream: true,
+      max_output_tokens: 220
+    }),
+    signal: controller.signal
+  });
+
+  if (!response.ok || !response.body) {
+    clearTimeout(timeout);
+    const errorText = await response.text().catch(() => "");
+    throw new AppError(502, "OPENAI_STREAM_FAILED", errorText || "Unable to stream response from OpenAI");
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let answer = "";
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+
+      buffer += decoder.decode(value, { stream: true });
+      const frames = buffer.split("\n\n");
+      buffer = frames.pop() || "";
+
+      for (const frame of frames) {
+        const lines = frame
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean);
+
+        for (const line of lines) {
+          if (!line.startsWith("data:")) {
+            continue;
+          }
+
+          const raw = line.slice(5).trim();
+          if (!raw || raw === "[DONE]") {
+            continue;
+          }
+
+          let event;
+          try {
+            event = JSON.parse(raw);
+          } catch (_error) {
+            continue;
+          }
+
+          if (event.type === "response.output_text.delta" && event.delta) {
+            const delta = String(event.delta);
+            answer += delta;
+            if (typeof onDelta === "function") {
+              await onDelta(delta);
+            }
+          }
+        }
+      }
+    }
+  } finally {
+    clearTimeout(timeout);
+    reader.releaseLock();
+  }
+
+  const normalizedAnswer = normalizeTranscript(answer);
+  if (!normalizedAnswer) {
+    return fallbackHelp(transcript);
+  }
+
+  return {
+    answer: normalizedAnswer,
+    bulletPoints: [],
+    speakingFormat: normalizedAnswer,
+    model: env.OPENAI_STREAM_MODEL,
+    provider: "openai",
+    cached: false,
+    sourceTranscript: transcript
+  };
+}
+
 async function generateWithOpenRouter(transcript, context, memoryTurns) {
   const client = getOpenRouterClient();
   if (!client) {
@@ -278,6 +410,69 @@ async function generateAiHelp({ transcript, context = {}, userId }) {
   return payload;
 }
 
+async function streamAiHelp({ transcript, context = {}, userId, onDelta }) {
+  const normalizedTranscript = normalizeTranscript(transcript);
+  if (!normalizedTranscript) {
+    throw new AppError(400, "INVALID_TRANSCRIPT", "Transcript is required");
+  }
+
+  const { sessionId, memoryTurns } = await resolveSessionMemoryContext({ userId, context });
+  const effectiveContext = {
+    role: context.role,
+    company: context.company,
+    speakingStyle: context.speakingStyle
+  };
+  const key = streamingCacheKeyForTranscript(normalizedTranscript, effectiveContext, memoryTurns);
+  const cached = await getCachedResponse(key);
+  if (cached) {
+    if (typeof onDelta === "function" && cached.answer) {
+      const words = String(cached.answer)
+        .split(/\s+/)
+        .filter(Boolean);
+      for (const [index, word] of words.entries()) {
+        await onDelta(index === words.length - 1 ? word : `${word} `);
+      }
+    }
+    await appendSessionMemory(sessionId, normalizedTranscript, cached);
+    return cached;
+  }
+
+  try {
+    if (env.AI_PROVIDER === "openai") {
+      const streamed = await generateStreamingWithOpenAI(normalizedTranscript, effectiveContext, memoryTurns, onDelta);
+      if (streamed) {
+        await appendSessionMemory(sessionId, normalizedTranscript, streamed);
+        await setCachedResponse(key, streamed);
+        return streamed;
+      }
+    }
+  } catch (error) {
+    logger.warn("Streaming AI provider failed; using fallback response", {
+      error: error.message,
+      provider: env.AI_PROVIDER
+    });
+  }
+
+  const fallback = await generateAiHelp({
+    transcript: normalizedTranscript,
+    context,
+    userId
+  });
+
+  if (typeof onDelta === "function" && fallback.answer) {
+    const words = String(fallback.answer)
+      .split(/\s+/)
+      .filter(Boolean);
+    for (const [index, word] of words.entries()) {
+      await onDelta(index === words.length - 1 ? word : `${word} `);
+    }
+  }
+
+  await setCachedResponse(key, fallback);
+  return fallback;
+}
+
 module.exports = {
-  generateAiHelp
+  generateAiHelp,
+  streamAiHelp
 };

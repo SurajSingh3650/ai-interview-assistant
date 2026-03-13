@@ -14,6 +14,32 @@ export type IncomingMessage =
   | {
       type: "system.error" | "system.warning";
       message: string;
+    }
+  | {
+      type: "heartbeat";
+      payload: {
+        ts: string;
+      };
+    }
+  | {
+      type: "transcript_update";
+      payload: {
+        transcript: string;
+        partialTranscript: string;
+        isFinal: boolean;
+        provider?: string;
+      };
+    }
+  | {
+      type: "ai_response";
+      payload: {
+        answer: string;
+        bulletPoints: string[];
+        speakingFormat: string;
+        cached: boolean;
+        model: string;
+        provider?: string;
+      };
     };
 
 export interface SocketCallbacks {

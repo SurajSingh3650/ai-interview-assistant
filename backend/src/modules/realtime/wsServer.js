@@ -11,8 +11,10 @@ const { generateAiHelp } = require("../ai/ai.service");
 const {
   startStream,
   ingestAudioChunk,
+  ingestAudioBuffer,
   stopStream,
-  getStream
+  getStream,
+  registerTranscriptListener
 } = require("../speech/transcription.service");
 
 async function appendSessionEvent({ sessionId, eventType, payload }) {
@@ -130,6 +132,18 @@ function createWsServer(httpServer) {
       send(ws, "heartbeat", { ts: new Date().toISOString() });
     }, 25000);
 
+    const unregisterTranscriptListener = registerTranscriptListener(sessionId, (update) => {
+      appendSessionEvent({
+        sessionId,
+        eventType: "transcript_update",
+        payload: update
+      }).catch((error) => {
+        logger.warn("Failed to append transcript update event", { sessionId, error: error.message });
+      });
+
+      send(ws, "transcript_update", update);
+    });
+
     ws.on("message", async (rawMessage) => {
       try {
         await validateRealtimeClaims(req.user);
@@ -150,10 +164,19 @@ function createWsServer(httpServer) {
           }
 
           case "audio_stream": {
+            if (payload.audioBase64) {
+              await ingestAudioBuffer({
+                sessionId,
+                audioBase64: payload.audioBase64
+              });
+              break;
+            }
+
             const update = await ingestAudioChunk({
               sessionId,
               transcriptChunk: payload.transcriptChunk,
               transcript: payload.transcript,
+              partialTranscript: payload.partialTranscript,
               isFinal: Boolean(payload.isFinal)
             });
 
@@ -239,6 +262,7 @@ function createWsServer(httpServer) {
 
     ws.on("close", () => {
       clearInterval(heartbeat);
+      unregisterTranscriptListener();
       logger.info("WebSocket disconnected", { connectionId, sessionId });
     });
   });
